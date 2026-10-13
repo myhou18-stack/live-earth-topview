@@ -169,8 +169,14 @@ button.small{padding:3px 7px;font-size:11px;width:auto;margin:0 2px}
 </div>
 <div id="info">左鍵旋轉｜滾輪縮放｜右鍵平移｜十段線永久紅色顯示</div>
 
+<!-- 💡 替換成這段正確的 CDN 連結（修正了核心模組的路徑） -->
 <script type="importmap">
-{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+{
+  "imports": {
+    "three": "https://cloudflare.com",
+    "three/addons/": "https://jsdelivr.net"
+  }
+}
 </script>
 <script type="module">
 import * as THREE from 'three';
