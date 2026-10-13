@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>3D 衛星地球標記系統 Pro v6</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#000;font-family:"Segoe UI","Microsoft JhengHei",sans-serif;color:#fff}
+#canvas-container{position:fixed;inset:0}
+#panel{
+  position:fixed;top:10px;left:10px;width:400px;max-height:calc(100vh - 20px);
+  background:rgba(12,18,32,.96);backdrop-filter:blur(18px);
+  border:1px solid rgba(100,116,139,.35);border-radius:16px;
+  padding:14px;z-index:30;overflow-y:auto;box-shadow:0 15px 50px rgba(0,0,0,.7);
+  transition:opacity .25s,transform .25s;font-size:13px
+}
+#panel.hidden{opacity:0;pointer-events:none;transform:translateX(-40px)}
+h2{font-size:15px;margin-bottom:10px;color:#38bdf8}
+.section{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #1e293b}
+label{display:block;font-size:11px;color:#94a3b8;margin-bottom:3px}
+input,select,button,textarea{
+  width:100%;padding:7px 9px;border-radius:7px;border:1px solid #334155;
+  background:#1e293b;color:#fff;font-size:12.5px;margin-bottom:5px
+}
+input:focus,select:focus{outline:none;border-color:#38bdf8}
+button{background:linear-gradient(135deg,#0ea5e9,#0284c7);border:none;cursor:pointer;font-weight:600}
+button:hover{filter:brightness(1.13)}
+button.secondary{background:#334155}
+button.danger{background:#dc2626}
+button.success{background:#16a34a}
+button.small{padding:3px 7px;font-size:11px;width:auto;margin:0 2px}
+.item{background:#1e293b;border-radius:8px;padding:7px 9px;margin-bottom:5px;border-left:3px solid #64748b;font-size:12px}
+.item .name{font-weight:600}
+.item-actions{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
+.color-dot{width:12px;height:12px;border-radius:50%;border:1px solid #fff;display:inline-block;vertical-align:middle;margin-right:4px}
+#info{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(12,18,32,.92);padding:5px 14px;border-radius:20px;font-size:11px;color:#94a3b8;z-index:20}
+#fullscreenBtn,#togglePanelBtn{
+  position:fixed;top:10px;right:10px;z-index:40;width:40px;height:40px;border-radius:10px;
+  background:rgba(12,18,32,.92);border:1px solid #334155;color:#fff;font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center
+}
+#togglePanelBtn{right:56px}
+.toggle-row{display:flex;gap:5px;margin-bottom:5px}
+.toggle-row button{flex:1}
+#tourBar{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(12,18,32,.96);padding:8px 16px;border-radius:30px;z-index:25;display:none;gap:8px;align-items:center;font-size:12px}
+#tourBar.show{display:flex}
+.tab{display:flex;gap:4px;margin-bottom:8px}
+.tab button{flex:1;padding:6px;font-size:12px;background:#1e293b}
+.tab button.active{background:#0ea5e9}
+.edit-form{background:#0f172a;padding:6px;border-radius:6px;margin-top:4px;display:none}
+.edit-form.show{display:block}
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<button id="fullscreenBtn" title="全螢幕">⛶</button>
+<button id="togglePanelBtn" title="面板">☰</button>
+
+<div id="panel">
+  <h2>🌍 3D 地球標記系統 Pro v6</h2>
+
+  <div class="section">
+    <label>專案管理</label>
+    <select id="projectSelect" onchange="switchProject()"></select>
+    <div class="toggle-row">
+      <input type="text" id="newProjectName" placeholder="新專案名稱" style="flex:2">
+      <button class="success" onclick="createProject()" style="flex:1">新建</button>
+    </div>
+    <button class="danger small" onclick="deleteProject()">刪除目前專案</button>
+  </div>
+
+  <div class="tab">
+    <button class="active" onclick="showTab('points')">坐標點</button>
+    <button onclick="showTab('countries')">國家邊界</button>
+    <button onclick="showTab('paths')">路徑</button>
+    <button onclick="showTab('tour')">導覽</button>
+  </div>
+
+  <!-- 坐標點 -->
+  <div id="tab-points" class="tab-content">
+    <div class="section">
+      <label>搜尋地點 / 座標 (lat,lng)</label>
+      <input type="text" id="searchPlace" placeholder="地名 或 50.395,30.588">
+      <input type="text" id="pointName" placeholder="標記名稱（可選）">
+      <input type="color" id="pointColor" value="#ef4444" style="height:32px;padding:2px">
+      <button class="success" onclick="addPointFromInput()">新增坐標點</button>
+    </div>
+    <div class="section">
+      <label>已標記坐標點 (<span id="pointCount">0</span>)</label>
+      <div id="pointList"></div>
+      <button class="danger small" onclick="clearPoints()">清除所有點</button>
+    </div>
+  </div>
+
+  <!-- 國家邊界 -->
+  <div id="tab-countries" class="tab-content" style="display:none">
+    <div class="section">
+      <label>新增國家邊界</label>
+      <input type="text" id="countryName" placeholder="顯示名稱（可自訂）">
+      <input type="text" id="countryKey" placeholder="搜尋關鍵字（中國 / China / Japan）">
+      <select id="countryStyle">
+        <option value="border">僅邊界線</option>
+        <option value="fill">填色 + 邊界</option>
+      </select>
+      <input type="color" id="countryColor" value="#22c55e" style="height:32px;padding:2px">
+      <button class="success" onclick="addCountryBorder()">新增國家邊界</button>
+      <p style="font-size:11px;color:#64748b;margin-top:4px">中國自動使用官方主張版（十段線永久紅色）</p>
+    </div>
+    <div class="section">
+      <label>已新增國家 (<span id="countryCount">0</span>)</label>
+      <div id="countryList"></div>
+      <button class="danger small" onclick="clearCountries()">清除所有國家</button>
+    </div>
+  </div>
+
+  <!-- 路徑 -->
+  <div id="tab-paths" class="tab-content" style="display:none">
+    <div class="section">
+      <label>新增路徑（可選坐標點或國家）</label>
+      <select id="pathFrom"><option value="">起點</option></select>
+      <select id="pathTo"><option value="">終點</option></select>
+      <input type="text" id="pathName" placeholder="路徑名稱">
+      <input type="color" id="pathColor" value="#22d3ee" style="height:32px;padding:2px">
+      <button class="success" onclick="addPath()">新增路徑</button>
+    </div>
+    <div class="section">
+      <label>已新增路徑 (<span id="pathCount">0</span>)</label>
+      <div id="pathList"></div>
+      <button class="danger small" onclick="clearPaths()">清除所有路徑</button>
+    </div>
+  </div>
+
+  <!-- 導覽 -->
+  <div id="tab-tour" class="tab-content" style="display:none">
+    <div class="section">
+      <label>自動導覽</label>
+      <div class="toggle-row">
+        <button class="success" onclick="startTour()">▶ 開始</button>
+        <button class="secondary" onclick="pauseTour()">⏸ 暫停</button>
+      </div>
+      <div class="toggle-row">
+        <button class="secondary" onclick="prevTour()">⏮ 上一個</button>
+        <button class="secondary" onclick="nextTour()">下一個 ⏭</button>
+      </div>
+      <label>每站停留秒數</label>
+      <input type="number" id="tourDelay" value="4" min="1" max="30">
+      <label style="margin-top:6px"><input type="checkbox" id="tourOnce"> 只播放一遍</label>
+    </div>
+  </div>
+
+  <div class="section">
+    <label>視覺控制</label>
+    <div class="toggle-row">
+      <button class="secondary" onclick="toggleBorders()">世界邊界</button>
+      <button class="secondary" onclick="toggleAtmosphere()">大氣層</button>
+    </div>
+    <div class="toggle-row">
+      <button class="secondary" onclick="toggleAutoRotate()">自動旋轉</button>
+      <button class="secondary" onclick="resetCamera()">重設視角</button>
+    </div>
+  </div>
+</div>
+
+<div id="tourBar">
+  <span id="tourStatus">導覽中</span>
+  <button class="small secondary" onclick="pauseTour()">暫停</button>
+  <button class="small secondary" onclick="stopTour()">停止</button>
+</div>
+<div id="info">左鍵旋轉｜滾輪縮放｜右鍵平移｜十段線永久紅色顯示</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let scene, camera, renderer, controls, earth, atmosphere, stars, worldBorders, tenDashGroup;
+let points = [], countries = [], paths = [];
+let currentProject = "預設專案";
+let projects = {};
+let nextId = 1;
+let autoRotate = true, showAtmosphere = true, showWorldBorders = true;
+const R = 5;
+let tourIdx = 0, tourTimer = null, isTouring = false, isPaused = false;
+
+// 十段線（永久紅色）
+const TEN_DASH = [
+  [[109.5176,16.3605],[109.7234,16.0559],[109.8780,15.7668],[109.9651,15.5260],[109.9853,15.3356]],
+  [[110.4833,12.4314],[110.4824,12.0858],[110.4514,11.8638],[110.2565,11.3936]],
+  [[108.3389,7.2666],[108.3073,6.7278],[108.3563,6.1126]],
+  [[111.9411,3.5536],[112.4015,3.6464],[112.9210,3.8451]],
+  [[115.6908,7.2902],[116.4095,8.1380]],
+  [[118.6350,11.0809],[118.8559,11.4579],[119.1013,12.0628],[119.1218,12.1356]],
+  [[119.6081,18.1435],[119.9108,18.7719],[120.1192,19.1177]],
+  [[121.4059,20.8002],[122.1222,21.7161]],
+  [[122.8033,23.6655],[123.0048,24.7493]],
+  [[119.1684,15.1074],[119.1698,15.7550],[119.1782,16.2657]]
+];
+
+// 中國官方主張輪廓（含藏南）
+const CHINA_CLAIM = [
+  [73.5,39.4],[78,32],[82,28],[88,27.5],[92,27],[97,28],[98.5,27],[103,22],[108,21],[110,18],
+  [116,22],[120,23],[122,25],[123,30],[125,40],[130,45],[134,48],[128,50],[118,50],[105,42],
+  [95,42],[85,45],[78,42],[73.5,39.4]
+];
+
+function init() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+  camera.position.set(0, 1.8, 11);
+
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+  // 全亮
+  scene.add(new THREE.AmbientLight(0xffffff, 1.45));
+  const sun1 = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun1.position.set(5,3,5); scene.add(sun1);
+  const sun2 = new THREE.DirectionalLight(0xffffff, 0.5);
+  sun2.position.set(-4,2,-3); scene.add(sun2);
+
+  createStars();
+  createEarth();
+  createAtmosphere();
+  loadWorldBorders();
+  createPermanentTenDash(); // 永久紅色十段線
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.minDistance = 5.12;
+  controls.maxDistance = 40;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.2;
+
+  window.addEventListener('resize', () => {
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  document.getElementById('fullscreenBtn').onclick = () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  };
+  document.getElementById('togglePanelBtn').onclick = () => {
+    document.getElementById('panel').classList.toggle('hidden');
+  };
+  document.addEventListener('fullscreenchange', () => {
+    document.getElementById('info').style.display = document.fullscreenElement ? 'none' : 'block';
+  });
+
+  loadAllProjects();
+  switchProject();
+  animate();
+}
+
+function createStars() {
+  const geo = new THREE.BufferGeometry();
+  const pos = [];
+  for(let i=0;i<5000;i++) pos.push((Math.random()-0.5)*1800,(Math.random()-0.5)*1800,(Math.random()-0.5)*1800);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  stars = new THREE.Points(geo, new THREE.PointsMaterial({color:0xffffff,size:1.0}));
+  scene.add(stars);
+}
+
+function createEarth() {
+  const geo = new THREE.SphereGeometry(R, 64, 64);
+  const map = new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg');
+  earth = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map}));
+  scene.add(earth);
+}
+
+function createAtmosphere() {
+  const geo = new THREE.SphereGeometry(R*1.015, 64, 64);
+  atmosphere = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    vertexShader:`varying vec3 vNormal;void main(){vNormal=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`varying vec3 vNormal;void main(){float i=pow(0.7-dot(vNormal,vec3(0,0,1.)),2.2);gl_FragColor=vec4(0.3,0.6,1.0,1.0)*i;}`,
+    blending:THREE.AdditiveBlending,side:THREE.BackSide,transparent:true
+  }));
+  scene.add(atmosphere);
+}
+
+function latLngToVec(lat, lng, radius = R + 0.04) {
+  const phi = (90-lat)*Math.PI/180;
+  const theta = (lng+180)*Math.PI/180;
+  return new THREE.Vector3(
+    -radius*Math.sin(phi)*Math.cos(theta),
+     radius*Math.cos(phi),
+     radius*Math.sin(phi)*Math.sin(theta)
+  );
+}
+
+// 永久紅色十段線（任何情況都顯示）
+function createPermanentTenDash() {
+  tenDashGroup = new THREE.Group();
+  TEN_DASH.forEach(seg => {
+    const pts = seg.map(([lng,lat]) => latLngToVec(lat, lng, R + 0.03));
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 })
+    );
+    tenDashGroup.add(line);
+  });
+  scene.add(tenDashGroup);
+}
+
+async function loadWorldBorders() {
+  worldBorders = new THREE.Group();
+  scene.add(worldBorders);
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson');
+    const gj = await res.json();
+    window._worldFeatures = gj.features;
+    gj.features.forEach(f => {
+      const n = (f.properties.NAME || f.properties.ADMIN || '').toLowerCase();
+      if (n.includes('china')) return; // 中國用官方版
+      const coords = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+      coords.forEach(poly => poly.forEach(ring => {
+        const pts = ring.map(([lng,lat]) => latLngToVec(lat,lng,R+0.012));
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+          new THREE.LineBasicMaterial({color:0x64748b,transparent:true,opacity:0.4}));
+        worldBorders.add(line);
+      }));
+    });
+  } catch(e){console.warn(e);}
+}
+
+// ========== 坐標點 ==========
+function createPin(color) {
+  const g = new THREE.Group();
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.032,0.10,10), new THREE.MeshBasicMaterial({color}));
+  cone.rotation.x = Math.PI; cone.position.y = -0.05;
+  g.add(cone);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.045,12,12), new THREE.MeshBasicMaterial({color}));
+  head.position.y = 0.022;
+  g.add(head);
+  return g;
+}
+
+window.addPointFromInput = function() {
+  const input = document.getElementById('searchPlace').value.trim();
+  const name = document.getElementById('pointName').value.trim();
+  const color = document.getElementById('pointColor').value;
+  if (!input) return alert('請輸入地名或座標');
+
+  const parts = input.split(/[,，\s]+/).map(s=>parseFloat(s)).filter(n=>!isNaN(n));
+  if (parts.length >= 2) {
+    addPoint(name || `${parts[0].toFixed(4)},${parts[1].toFixed(4)}`, parts[0], parts[1], color);
+    return;
+  }
+
+  fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&limit=1`, {
+    headers:{'User-Agent':'EarthPro/6.0'}
+  }).then(r=>r.json()).then(data=>{
+    if (!data.length) return alert('找不到地點');
+    addPoint(name || data[0].display_name.split(',')[0], parseFloat(data[0].lat), parseFloat(data[0].lon), color);
+  }).catch(()=>alert('搜尋失敗'));
+};
+
+function addPoint(name, lat, lng, color) {
+  const pos = latLngToVec(lat, lng);
+  const pin = createPin(color);
+  pin.position.copy(pos);
+  pin.lookAt(pos.clone().multiplyScalar(2));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 48;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.beginPath(); ctx.roundRect(0,0,256,48,6); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(name.substring(0,16), 128, 32);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),transparent:true}));
+  sprite.scale.set(0.7, 0.14, 1);
+  sprite.position.copy(pos.clone().multiplyScalar(1.08));
+
+  const group = new THREE.Group();
+  group.add(pin); group.add(sprite);
+  scene.add(group);
+
+  points.push({id:nextId++, name, lat, lng, color, group, pin, type:'point'});
+  saveCurrentProject();
+  renderPoints();
+  updatePathSelects();
+  document.getElementById('searchPlace').value = '';
+  document.getElementById('pointName').value = '';
+}
+
+function renderPoints() {
+  document.getElementById('pointCount').textContent = points.length;
+  const list = document.getElementById('pointList');
+  list.innerHTML = '';
+  points.forEach((p,i)=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.style.borderLeftColor = p.color;
+    div.innerHTML = `<div class="name"><span class="color-dot" style="background:${p.color}"></span>${p.name}</div>
+      <small>${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</small>
+      <div class="item-actions">
+        <button class="small secondary" onclick="flyToPoint(${i})">飛去</button>
+        <button class="small secondary" onclick="toggleEditPoint(${i})">編輯</button>
+        <button class="small danger" onclick="removePoint(${i})">刪</button>
+      </div>
+      <div class="edit-form" id="edit-point-${i}">
+        <input id="edit-pname-${i}" value="${p.name}">
+        <input type="color" id="edit-pcolor-${i}" value="${p.color}" style="height:28px">
+        <button class="small success" onclick="saveEditPoint(${i})">儲存</button>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+
+window.toggleEditPoint = i => document.getElementById(`edit-point-${i}`).classList.toggle('show');
+window.saveEditPoint = i => {
+  const p = points[i];
+  p.name = document.getElementById(`edit-pname-${i}`).value.trim() || p.name;
+  p.color = document.getElementById(`edit-pcolor-${i}`).value;
+  p.pin.traverse(c=>{if(c.isMesh)c.material.color.set(p.color);});
+  // 更新文字
+  const sp = p.group.children.find(c=>c.isSprite);
+  if(sp){
+    const canvas = document.createElement('canvas');
+    canvas.width=256; canvas.height=48;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle='rgba(0,0,0,0.75)';
+    ctx.beginPath(); ctx.roundRect(0,0,256,48,6); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(p.name.substring(0,16),128,32);
+    sp.material.map = new THREE.CanvasTexture(canvas);
+    sp.material.needsUpdate = true;
+  }
+  saveCurrentProject(); renderPoints(); updatePathSelects();
+};
+
+window.flyToPoint = function(i) {
+  const p = points[i];
+  const target = latLngToVec(p.lat, p.lng, R+2.4);
+  const start = camera.position.clone();
+  const t0 = performance.now();
+  (function anim(t){
+    const k = Math.min((t-t0)/800,1);
+    const e = k<0.5 ? 2*k*k : -1+(4-2*k)*k;
+    camera.position.lerpVectors(start, target, e);
+    controls.target.set(0,0,0);
+    if(k<1) requestAnimationFrame(anim);
+  })(t0);
+};
+
+window.removePoint = i => {
+  scene.remove(points[i].group);
+  points.splice(i,1);
+  saveCurrentProject(); renderPoints(); updatePathSelects();
+};
+
+window.clearPoints = () => {
+  if(!confirm('清除所有坐標點？')) return;
+  points.forEach(p=>scene.remove(p.group));
+  points = []; saveCurrentProject(); renderPoints(); updatePathSelects();
+};
+
+// ========== 國家邊界（填色 + 名稱標籤） ==========
+window.addCountryBorder = function() {
+  const displayName = document.getElementById('countryName').value.trim() || document.getElementById('countryKey').value.trim();
+  const key = document.getElementById('countryKey').value.trim() || displayName;
+  const style = document.getElementById('countryStyle').value;
+  const color = document.getElementById('countryColor').value;
+  if (!key) return alert('請輸入國家關鍵字');
+
+  const group = new THREE.Group();
+  let centerLat = 35, centerLng = 105; // 預設中國中心
+  let found = false;
+
+  if (key.includes('中國') || key.toLowerCase().includes('china') || key.includes('中国')) {
+    // 十段線已永久顯示，這裡只加主張輪廓
+    const outlinePts = CHINA_CLAIM.map(([lng,lat]) => latLngToVec(lat, lng, R+0.02));
+    const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(outlinePts),
+      new THREE.LineBasicMaterial({color, transparent:true, opacity:0.95}));
+    group.add(outline);
+
+    if (style === 'fill') {
+      // 簡單填色示意（用多個扇形近似，實際效果為半透明覆蓋）
+      const fillMat = new THREE.MeshBasicMaterial({
+        color, transparent:true, opacity:0.25, side:THREE.DoubleSide
+      });
+      // 用一個稍大的球體片段示意填色
+      const fillGeo = new THREE.SphereGeometry(R+0.015, 32, 16, 0, Math.PI*2, 0.3, 1.2);
+      const fillMesh = new THREE.Mesh(fillGeo, fillMat);
+      // 旋轉到中國大致位置
+      fillMesh.rotation.y = -0.8;
+      group.add(fillMesh);
+    }
+    centerLat = 35; centerLng = 105;
+    found = true;
+  } else if (window._worldFeatures) {
+    window._worldFeatures.forEach(f => {
+      const n = (f.properties.NAME || f.properties.ADMIN || '').toLowerCase();
+      if (n.includes(key.toLowerCase()) || key.toLowerCase().includes(n)) {
+        const coords = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+        let sumLat=0, sumLng=0, cnt=0;
+        coords.forEach(poly => poly.forEach(ring => {
+          const pts = ring.map(([lng,lat]) => {
+            sumLat += lat; sumLng += lng; cnt++;
+            return latLngToVec(lat, lng, R+0.018);
+          });
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+            new THREE.LineBasicMaterial({color, transparent:true, opacity:0.9}));
+          group.add(line);
+        }));
+        if (cnt > 0) { centerLat = sumLat/cnt; centerLng = sumLng/cnt; }
+        found = true;
+      }
+    });
+  }
+
+  if (!found) return alert('找不到該國家，請試試英文名或「中國」');
+
+  // 國家名稱標籤
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 48;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.beginPath(); ctx.roundRect(0,0,256,48,6); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(displayName.substring(0,14), 128, 32);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),transparent:true}));
+  sprite.scale.set(1.2, 0.25, 1);
+  const labelPos = latLngToVec(centerLat, centerLng, R+0.15);
+  sprite.position.copy(labelPos);
+  group.add(sprite);
+
+  scene.add(group);
+  countries.push({
+    id: nextId++, name: displayName, key, color, style, group,
+    lat: centerLat, lng: centerLng, type: 'country'
+  });
+  saveCurrentProject();
+  renderCountries();
+  updatePathSelects();
+  document.getElementById('countryName').value = '';
+  document.getElementById('countryKey').value = '';
+};
+
+function renderCountries() {
+  document.getElementById('countryCount').textContent = countries.length;
+  const list = document.getElementById('countryList');
+  list.innerHTML = '';
+  countries.forEach((c,i)=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.style.borderLeftColor = c.color;
+    div.innerHTML = `<div class="name"><span class="color-dot" style="background:${c.color}"></span>${c.name} (${c.style==='fill'?'填色':'邊界'})</div>
+      <div class="item-actions">
+        <button class="small secondary" onclick="toggleEditCountry(${i})">重命名</button>
+        <button class="small danger" onclick="removeCountry(${i})">刪除</button>
+      </div>
+      <div class="edit-form" id="edit-country-${i}">
+        <input id="edit-cname-${i}" value="${c.name}">
+        <button class="small success" onclick="saveEditCountry(${i})">儲存名稱</button>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+
+window.toggleEditCountry = i => document.getElementById(`edit-country-${i}`).classList.toggle('show');
+window.saveEditCountry = i => {
+  const c = countries[i];
+  c.name = document.getElementById(`edit-cname-${i}`).value.trim() || c.name;
+  // 更新標籤
+  const sp = c.group.children.find(ch => ch.isSprite);
+  if (sp) {
+    const canvas = document.createElement('canvas');
+    canvas.width=256; canvas.height=48;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.beginPath(); ctx.roundRect(0,0,256,48,6); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(c.name.substring(0,14),128,32);
+    sp.material.map = new THREE.CanvasTexture(canvas);
+    sp.material.needsUpdate = true;
+  }
+  saveCurrentProject(); renderCountries(); updatePathSelects();
+};
+
+window.removeCountry = i => {
+  scene.remove(countries[i].group);
+  countries.splice(i,1);
+  saveCurrentProject(); renderCountries(); updatePathSelects();
+};
+
+window.clearCountries = () => {
+  if(!confirm('清除所有國家？')) return;
+  countries.forEach(c=>scene.remove(c.group));
+  countries = []; saveCurrentProject(); renderCountries(); updatePathSelects();
+};
+
+// ========== 路徑（支援點 + 國家） ==========
+function updatePathSelects() {
+  const from = document.getElementById('pathFrom');
+  const to = document.getElementById('pathTo');
+  from.innerHTML = '<option value="">起點</option>';
+  to.innerHTML = '<option value="">終點</option>';
+
+  points.forEach((p,i) => {
+    from.innerHTML += `<option value="point_${i}">📍 ${p.name}</option>`;
+    to.innerHTML += `<option value="point_${i}">📍 ${p.name}</option>`;
+  });
+  countries.forEach((c,i) => {
+    from.innerHTML += `<option value="country_${i}">🏳️ ${c.name}</option>`;
+    to.innerHTML += `<option value="country_${i}">🏳️ ${c.name}</option>`;
+  });
+}
+
+window.addPath = function() {
+  const fromVal = document.getElementById('pathFrom').value;
+  const toVal = document.getElementById('pathTo').value;
+  if (!fromVal || !toVal || fromVal === toVal) return alert('請選擇不同的起點與終點');
+
+  let a, b;
+  if (fromVal.startsWith('point_')) a = points[parseInt(fromVal.split('_')[1])];
+  else a = countries[parseInt(fromVal.split('_')[1])];
+  if (toVal.startsWith('point_')) b = points[parseInt(toVal.split('_')[1])];
+  else b = countries[parseInt(toVal.split('_')[1])];
+
+  const name = document.getElementById('pathName').value.trim() || `路徑${paths.length+1}`;
+  const color = document.getElementById('pathColor').value;
+
+  const pts = [];
+  for (let i=0; i<=80; i++) {
+    const t = i/80;
+    const lat = a.lat + (b.lat - a.lat)*t;
+    const lng = a.lng + (b.lng - a.lng)*t;
+    pts.push(latLngToVec(lat, lng, R+0.03));
+  }
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({color}));
+  scene.add(line);
+  const particle = new THREE.Mesh(new THREE.SphereGeometry(0.028,8,8), new THREE.MeshBasicMaterial({color}));
+  scene.add(particle);
+
+  paths.push({id:nextId++, name, color, line, particle, points:pts, t:0});
+  saveCurrentProject();
+  renderPaths();
+  document.getElementById('pathName').value = '';
+};
+
+function renderPaths() {
+  document.getElementById('pathCount').textContent = paths.length;
+  const list = document.getElementById('pathList');
+  list.innerHTML = '';
+  paths.forEach((p,i)=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.style.borderLeftColor = p.color;
+    div.innerHTML = `<div class="name"><span class="color-dot" style="background:${p.color}"></span>${p.name}</div>
+      <div class="item-actions"><button class="small danger" onclick="removePath(${i})">刪除</button></div>`;
+    list.appendChild(div);
+  });
+}
+
+window.removePath = i => {
+  scene.remove(paths[i].line);
+  scene.remove(paths[i].particle);
+  paths.splice(i,1);
+  saveCurrentProject(); renderPaths();
+};
+
+window.clearPaths = () => {
+  if(!confirm('清除所有路徑？')) return;
+  paths.forEach(p=>{scene.remove(p.line);scene.remove(p.particle);});
+  paths = []; saveCurrentProject(); renderPaths();
+};
+
+// ========== 導覽 ==========
+window.startTour = function() {
+  if (points.length === 0) return alert('請先新增坐標點');
+  isTouring = true; isPaused = false; tourIdx = 0;
+  document.getElementById('tourBar').classList.add('show');
+  playTour();
+};
+function playTour() {
+  if (!isTouring || isPaused) return;
+  flyToPoint(tourIdx);
+  document.getElementById('tourStatus').textContent = `${tourIdx+1}/${points.length} ${points[tourIdx].name}`;
+  const delay = (parseFloat(document.getElementById('tourDelay').value)||4)*1000;
+  const once = document.getElementById('tourOnce').checked;
+  tourTimer = setTimeout(()=>{
+    tourIdx++;
+    if (tourIdx >= points.length) {
+      if (once) { stopTour(); return; }
+      tourIdx = 0;
+    }
+    playTour();
+  }, delay);
+}
+window.pauseTour = ()=>{isPaused=!isPaused; if(!isPaused) playTour();};
+window.stopTour = ()=>{isTouring=false; clearTimeout(tourTimer); document.getElementById('tourBar').classList.remove('show');};
+window.nextTour = ()=>{if(isTouring){clearTimeout(tourTimer);tourIdx=(tourIdx+1)%points.length;playTour();}};
+window.prevTour = ()=>{if(isTouring){clearTimeout(tourTimer);tourIdx=(tourIdx-1+points.length)%points.length;playTour();}};
+
+// ========== 專案 ==========
+function loadAllProjects() {
+  const raw = localStorage.getItem('earth_projects_v6');
+  projects = raw ? JSON.parse(raw) : {'預設專案':{points:[],countries:[],paths:[]}};
+  if (!projects[currentProject]) projects[currentProject] = {points:[],countries:[],paths:[]};
+  refreshProjectSelect();
+}
+function refreshProjectSelect() {
+  const sel = document.getElementById('projectSelect');
+  sel.innerHTML = '';
+  Object.keys(projects).forEach(name=>{
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === currentProject) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+window.createProject = function() {
+  const name = document.getElementById('newProjectName').value.trim();
+  if (!name) return alert('請輸入名稱');
+  if (projects[name]) return alert('已存在');
+  projects[name] = {points:[],countries:[],paths:[]};
+  currentProject = name;
+  saveAllProjects();
+  refreshProjectSelect();
+  clearSceneData();
+  document.getElementById('newProjectName').value = '';
+};
+window.switchProject = function() {
+  currentProject = document.getElementById('projectSelect').value;
+  clearSceneData();
+  const data = projects[currentProject] || {points:[],countries:[],paths:[]};
+  data.points.forEach(p => addPoint(p.name, p.lat, p.lng, p.color));
+  renderPoints(); renderCountries(); renderPaths();
+  updatePathSelects();
+};
+window.deleteProject = function() {
+  if (Object.keys(projects).length <= 1) return alert('至少保留一個');
+  if (!confirm(`刪除「${currentProject}」？`)) return;
+  delete projects[currentProject];
+  currentProject = Object.keys(projects)[0];
+  saveAllProjects(); refreshProjectSelect(); switchProject();
+};
+function clearSceneData() {
+  points.forEach(p => scene.remove(p.group));
+  countries.forEach(c => scene.remove(c.group));
+  paths.forEach(p => {scene.remove(p.line); scene.remove(p.particle);});
+  points = []; countries = []; paths = [];
+}
+function saveCurrentProject() {
+  projects[currentProject] = {
+    points: points.map(p => ({name:p.name, lat:p.lat, lng:p.lng, color:p.color})),
+    countries: countries.map(c => ({name:c.name, key:c.key, color:c.color, style:c.style, lat:c.lat, lng:c.lng})),
+    paths: paths.map(p => ({name:p.name, color:p.color}))
+  };
+  saveAllProjects();
+}
+function saveAllProjects() {
+  localStorage.setItem('earth_projects_v6', JSON.stringify(projects));
+}
+
+// ========== 視覺 ==========
+window.toggleAutoRotate = ()=>{autoRotate=!autoRotate; controls.autoRotate=autoRotate;};
+window.toggleAtmosphere = ()=>{showAtmosphere=!showAtmosphere; atmosphere.visible=showAtmosphere;};
+window.toggleBorders = ()=>{showWorldBorders=!showWorldBorders; worldBorders.visible=showWorldBorders;};
+window.resetCamera = ()=>{camera.position.set(0,1.8,11); controls.target.set(0,0,0);};
+
+window.showTab = function(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById('tab-'+tab).style.display = 'block';
+  document.querySelectorAll('.tab button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+};
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  // 路徑流動
+  paths.forEach(p => {
+    p.t = (p.t + 0.007) % 1;
+    const idx = Math.floor(p.t * (p.points.length-1));
+    p.particle.position.copy(p.points[idx]);
+  });
+
+  // 坐標點文字與 Pin 隨距離大幅縮小（解決遮蓋問題）
+  const dist = camera.position.length();
+  const scale = Math.max(0.25, Math.min(1.5, 5.5 / dist));
+  points.forEach(p => {
+    p.pin.scale.setScalar(scale);
+    const sp = p.group.children.find(c => c.isSprite);
+    if (sp) sp.scale.set(0.7 * scale, 0.14 * scale, 1);
+  });
+
+  renderer.render(scene, camera);
+}
+
+init();
+</script>
+</body>
+</html>
